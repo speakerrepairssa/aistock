@@ -1,0 +1,14 @@
+{
+  "name": "aistock",
+  "version": "1.0.0",
+  "description": "AI-powered inventory management system with OCR stock updates",
+  "main": "index.js",
+  "scripts": {
+    "dev": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build",
+    "test": "cd frontend && npm test"
+  },
+  "keywords": ["inventory", "stock", "ocr", "firebase"],
+  "author": "",
+  "license": "MIT"
+}

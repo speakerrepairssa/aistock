@@ -1,0 +1,451 @@
+import React, { useEffect, useState, useCallback } from 'react';
+import {
+  Container,
+  Typography,
+  Button,
+  CircularProgress,
+  Alert,
+  Box,
+  Fab,
+  Switch,
+  FormControlLabel,
+  Paper,
+  Chip,
+} from '@mui/material';
+import { RefreshCw, Settings, Plus, Lock, Unlock, Move, Maximize2 } from 'lucide-react';
+import { Responsive, WidthProvider, Layout } from 'react-grid-layout';
+import { useProducts } from '../hooks';
+import { useSettings } from '../store/settingsStore';
+import {
+  StatsWidget,
+  QuickActionsWidget,
+  RecentActivityWidget,
+  TasksWidget,
+  AnalyticsWidget,
+} from './DashboardWidgets';
+import { CustomizationDialog } from './CustomizationDialog';
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
+
+const ResponsiveGridLayout = WidthProvider(Responsive);
+
+interface Widget {
+  id: string;
+  title: string;
+  description: string;
+  icon: React.ReactNode;
+  enabled: boolean;
+  component: React.ComponentType<any>;
+  defaultLayout: {
+    w: number;
+    h: number;
+    x: number;
+    y: number;
+    minW?: number;
+    minH?: number;
+    maxW?: number;
+    maxH?: number;
+  };
+}
+
+const defaultWidgets: Widget[] = [
+  {
+    id: 'stats',
+    title: 'Inventory Overview',
+    description: 'Quick stats about your inventory',
+    icon: <Settings size={20} />,
+    enabled: true,
+    component: StatsWidget,
+    defaultLayout: { w: 12, h: 4, x: 0, y: 0, minW: 6, minH: 3, maxH: 6 },
+  },
+  {
+    id: 'quickActions',
+    title: 'Quick Actions',
+    description: 'Shortcuts to common tasks',
+    icon: <Plus size={20} />,
+    enabled: true,
+    component: QuickActionsWidget,
+    defaultLayout: { w: 6, h: 4, x: 0, y: 4, minW: 3, minH: 3, maxH: 6 },
+  },
+  {
+    id: 'recentActivity',
+    title: 'Recent Activity',
+    description: 'Latest actions and updates',
+    icon: <Settings size={20} />,
+    enabled: true,
+    component: RecentActivityWidget,
+    defaultLayout: { w: 6, h: 4, x: 6, y: 4, minW: 3, minH: 3, maxH: 8 },
+  },
+  {
+    id: 'tasks',
+    title: 'Tasks & Reminders',
+    description: 'Your to-do list and reminders',
+    icon: <Settings size={20} />,
+    enabled: false,
+    component: TasksWidget,
+    defaultLayout: { w: 4, h: 3, x: 0, y: 8, minW: 3, minH: 2, maxH: 5 },
+  },
+  {
+    id: 'analytics',
+    title: 'Sales Analytics',
+    description: 'Charts and insights',
+    icon: <Settings size={20} />,
+    enabled: false,
+    component: AnalyticsWidget,
+    defaultLayout: { w: 8, h: 4, x: 4, y: 8, minW: 4, minH: 3, maxH: 6 },
+  },
+];
+
+export const DraggableDashboard: React.FC = () => {
+  const { fetchStats, stats, loading, fetchProducts, error } = useProducts();
+  const { currency } = useSettings();
+  const [refreshing, setRefreshing] = useState(false);
+  const [customizationOpen, setCustomizationOpen] = useState(false);
+  const [widgets, setWidgets] = useState<Widget[]>(defaultWidgets);
+  const [layouts, setLayouts] = useState<{ [key: string]: Layout[] }>({});
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Load widget configuration from localStorage
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('dashboardWidgets');
+    const savedLayouts = localStorage.getItem('dashboardLayouts');
+    
+    if (savedConfig) {
+      try {
+        const savedWidgets = JSON.parse(savedConfig);
+        setWidgets(prevWidgets =>
+          prevWidgets.map(widget => {
+            const saved = savedWidgets.find((s: any) => s.id === widget.id);
+            return saved ? { ...widget, enabled: saved.enabled } : widget;
+          })
+        );
+      } catch (error) {
+        console.error('Failed to load widget configuration:', error);
+      }
+    }
+
+    if (savedLayouts) {
+      try {
+        setLayouts(JSON.parse(savedLayouts));
+      } catch (error) {
+        console.error('Failed to load layout configuration:', error);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    const loadData = async () => {
+      console.log('Dashboard: Loading stats and products...');
+      await Promise.all([fetchStats(), fetchProducts()]);
+    };
+    loadData();
+  }, []);
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await Promise.all([fetchStats(), fetchProducts()]);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const handleToggleWidget = (widgetId: string) => {
+    setWidgets(prev =>
+      prev.map(widget =>
+        widget.id === widgetId ? { ...widget, enabled: !widget.enabled } : widget
+      )
+    );
+  };
+
+  const handleRemoveWidget = (widgetId: string) => {
+    setWidgets(prev =>
+      prev.map(widget =>
+        widget.id === widgetId ? { ...widget, enabled: false } : widget
+      )
+    );
+    saveWidgetConfiguration(
+      widgets.map(widget =>
+        widget.id === widgetId ? { ...widget, enabled: false } : widget
+      )
+    );
+  };
+
+  const saveWidgetConfiguration = (widgetConfig: Widget[]) => {
+    const configToSave = widgetConfig.map(({ id, enabled }) => ({ id, enabled }));
+    localStorage.setItem('dashboardWidgets', JSON.stringify(configToSave));
+  };
+
+  const saveLayouts = useCallback((allLayouts: { [key: string]: Layout[] }) => {
+    setLayouts(allLayouts);
+    localStorage.setItem('dashboardLayouts', JSON.stringify(allLayouts));
+  }, []);
+
+  const handleSaveCustomization = () => {
+    saveWidgetConfiguration(widgets);
+    setCustomizationOpen(false);
+  };
+
+  const generateLayout = (): Layout[] => {
+    return widgets
+      .filter(widget => widget.enabled)
+      .map(widget => ({
+        i: widget.id,
+        ...widget.defaultLayout,
+      }));
+  };
+
+  const getCurrentLayout = (breakpoint: string = 'lg'): Layout[] => {
+    if (layouts[breakpoint] && layouts[breakpoint].length > 0) {
+      // Filter layout to only include enabled widgets
+      const enabledWidgetIds = widgets.filter(w => w.enabled).map(w => w.id);
+      return layouts[breakpoint].filter(layout => enabledWidgetIds.includes(layout.i));
+    }
+    return generateLayout();
+  };
+
+  const enabledWidgets = widgets.filter(widget => widget.enabled);
+
+  const renderWidget = (widget: Widget) => {
+    const WidgetComponent = widget.component;
+    
+    return (
+      <div key={widget.id} className="dashboard-widget">
+        <Paper
+          elevation={isEditing ? 8 : 2}
+          sx={{
+            height: '100%',
+            display: 'flex',
+            flexDirection: 'column',
+            position: 'relative',
+            border: isEditing ? '2px solid #2563eb' : '1px solid #e5e7eb',
+            borderRadius: 2,
+            overflow: 'hidden',
+            transition: 'all 0.3s ease',
+            '&:hover': {
+              boxShadow: isEditing ? '0 8px 25px rgba(37, 99, 235, 0.25)' : '0 4px 20px rgba(0,0,0,0.1)',
+            },
+          }}
+        >
+          {isEditing && (
+            <Box
+              sx={{
+                position: 'absolute',
+                top: 4,
+                left: 4,
+                zIndex: 1000,
+                display: 'flex',
+                gap: 0.5,
+              }}
+            >
+              <Chip
+                icon={<Move size={12} />}
+                label="Drag"
+                size="small"
+                sx={{
+                  backgroundColor: '#2563eb',
+                  color: 'white',
+                  fontSize: '0.7rem',
+                  height: 24,
+                }}
+              />
+              <Chip
+                icon={<Maximize2 size={12} />}
+                label="Resize"
+                size="small"
+                sx={{
+                  backgroundColor: '#059669',
+                  color: 'white',
+                  fontSize: '0.7rem',
+                  height: 24,
+                }}
+              />
+            </Box>
+          )}
+          
+          <Box sx={{ p: 0, height: '100%', mt: isEditing ? 4 : 0 }}>
+            <WidgetComponent
+              stats={stats}
+              currency={currency}
+              onRemove={() => handleRemoveWidget(widget.id)}
+              customizable={!isEditing}
+              isEditing={isEditing}
+            />
+          </Box>
+        </Paper>
+      </div>
+    );
+  };
+
+  console.log('Dashboard render - stats:', stats, 'widgets:', enabledWidgets.length);
+
+  return (
+    <Container maxWidth="xl" sx={{ py: 4 }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box>
+          <Typography variant="h4" sx={{ fontWeight: 600, mb: 1 }}>
+            Dashboard
+          </Typography>
+          <Typography color="textSecondary">
+            Drag, resize, and customize your dashboard
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={isEditing}
+                onChange={(e) => setIsEditing(e.target.checked)}
+                color="primary"
+              />
+            }
+            label={
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {isEditing ? <Unlock size={16} /> : <Lock size={16} />}
+                {isEditing ? 'Edit Mode' : 'View Mode'}
+              </Box>
+            }
+          />
+          <Button
+            variant="outlined"
+            startIcon={<Settings size={20} />}
+            onClick={() => setCustomizationOpen(true)}
+          >
+            Widgets
+          </Button>
+          <Button
+            variant="contained"
+            startIcon={refreshing ? <CircularProgress size={20} /> : <RefreshCw size={20} />}
+            onClick={handleRefresh}
+            disabled={refreshing}
+          >
+            {refreshing ? 'Refreshing...' : 'Refresh'}
+          </Button>
+        </Box>
+      </Box>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert severity="error" sx={{ mb: 3 }}>
+          {error}
+        </Alert>
+      )}
+
+      {/* Loading State */}
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+          <CircularProgress />
+        </Box>
+      )}
+
+      {/* Dashboard Grid */}
+      {!loading && (
+        <>
+          {enabledWidgets.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 8 }}>
+              <Settings size={48} color="#6b7280" style={{ marginBottom: 16 }} />
+              <Typography variant="h6" color="textSecondary" sx={{ mb: 2 }}>
+                No widgets enabled
+              </Typography>
+              <Typography color="textSecondary" sx={{ mb: 3 }}>
+                Add some widgets to get started with your dashboard.
+              </Typography>
+              <Button
+                variant="contained"
+                startIcon={<Settings size={20} />}
+                onClick={() => setCustomizationOpen(true)}
+              >
+                Add Widgets
+              </Button>
+            </Box>
+          ) : (
+            <Box
+              sx={{
+                backgroundColor: isEditing ? '#f8fafc' : 'transparent',
+                borderRadius: 2,
+                p: isEditing ? 2 : 0,
+                transition: 'all 0.3s ease',
+                border: isEditing ? '2px dashed #cbd5e1' : 'none',
+              }}
+            >
+              <ResponsiveGridLayout
+                className="layout"
+                layouts={layouts}
+                onLayoutChange={(layout, allLayouts) => {
+                  if (isEditing) {
+                    saveLayouts(allLayouts);
+                  }
+                }}
+                breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+                cols={{ lg: 12, md: 10, sm: 6, xs: 4, xxs: 2 }}
+                rowHeight={60}
+                isDraggable={isEditing}
+                isResizable={isEditing}
+                margin={[16, 16]}
+                containerPadding={[0, 0]}
+                useCSSTransforms={true}
+                compactType="vertical"
+                preventCollision={false}
+              >
+                {enabledWidgets.map(renderWidget)}
+              </ResponsiveGridLayout>
+            </Box>
+          )}
+        </>
+      )}
+
+      {/* Floating Add Button */}
+      {enabledWidgets.length > 0 && !isEditing && (
+        <Fab
+          onClick={() => setCustomizationOpen(true)}
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            right: 24,
+            bgcolor: '#2563eb',
+            color: 'white',
+            '&:hover': {
+              bgcolor: '#1d4ed8',
+            },
+          }}
+        >
+          <Plus size={24} />
+        </Fab>
+      )}
+
+      {/* Edit Mode Help */}
+      {isEditing && enabledWidgets.length > 0 && (
+        <Paper
+          elevation={4}
+          sx={{
+            position: 'fixed',
+            bottom: 24,
+            left: '50%',
+            transform: 'translateX(-50%)',
+            p: 2,
+            bgcolor: '#1f2937',
+            color: 'white',
+            borderRadius: 2,
+          }}
+        >
+          <Typography variant="body2">
+            <Move size={16} style={{ verticalAlign: 'middle', marginRight: 4 }} />
+            Drag widgets to reorder • 
+            <Maximize2 size={16} style={{ verticalAlign: 'middle', marginLeft: 4, marginRight: 4 }} />
+            Drag corners to resize • Switch off Edit Mode when done
+          </Typography>
+        </Paper>
+      )}
+
+      {/* Customization Dialog */}
+      <CustomizationDialog
+        open={customizationOpen}
+        onClose={() => setCustomizationOpen(false)}
+        widgets={widgets}
+        onToggleWidget={handleToggleWidget}
+        onSave={handleSaveCustomization}
+      />
+    </Container>
+  );
+};
