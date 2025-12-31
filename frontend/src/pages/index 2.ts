@@ -1,0 +1,11 @@
+export { Dashboard } from './Dashboard';
+export { Products } from './Products';
+export { Login } from './Login';
+export { Register } from './Register';
+export { OCRScanner } from './OCRScanner';
+export { Settings } from './Settings';
+export { Sales } from './Sales';
+export { SalesInvoices } from './SalesInvoices';
+export { SalesReceipts } from './SalesReceipts';
+export { Repair } from './Repair';
+export { Reports } from './Reports';
